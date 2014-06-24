@@ -1,0 +1,122 @@
+<?php
+/**
+ * @file
+ */
+
+/**
+ * Copies a method implementation directly from the file
+ * that it is defined in.
+ *
+ * @param ReflectionMethod $method
+ *  The method to output.
+ * @return
+ *  A string containing the method implementation.
+ */
+function dpo_format_method($method) {
+  $output = '';
+
+  // Generate docbloc with line numbers
+  $lines = explode("\n", $method->getDocComment());
+  $i = $method->getStartLine() - count($lines);
+  foreach($lines as $line) {
+    $output .= basename($method->getFileName());
+    $output .= ':';
+    $output .= $i++;
+    $output .= $line . "\n";
+  }
+
+  // Pull the function definition from its implementing
+  // file
+  $lines = file($method->getFileName());
+  for ($i = $method->getStartLine()- 1; $i <= $method->getEndLine() -1; $i++) {
+    $output .= basename($method->getFileName());
+    $output .= ':';
+    $output .= $i + 1;
+    $output .= $lines[$i];
+  }
+  return $output;
+}
+
+/**
+ * Generates a complete list of classes in an object's
+ * hierarchy that implement a given method.
+ *
+ * @param ReflectionMethod $method
+ *  A concrete method.
+ * @return
+ *  An array of classes.  The array is keyed by the method
+ *  name and the subarray is keyed by the class implementing
+ *  the method.
+ */
+function dpo_walk_method($method) {
+  $name = $method->getName();
+  $chain = array();
+  while($method) {
+    $class = $method->getDeclaringClass();
+    $chain[$class->getName()] = dpo_format_method($method);
+    $parent = $class->getParentClass();
+    if (!$parent || !$parent->hasMethod($name)) {
+      break;
+    }
+    $method = $parent->getMethod($name);
+  }
+  return $chain;
+}
+
+/**
+ * Decorates a tree structure with information about
+ * objects in the tree.
+ *
+ * @param mixed $input
+ *  The structure to decorate.
+ * @return
+ *  A decorated tree.
+ */
+function dpo_decorate($input) {
+  if (is_object($input)) {
+    foreach ($input as $key => $val) {
+      if (is_object($val)) {
+        $input[$key] = dpo_decorate($val);
+      }
+    }
+    $refClass = new ReflectionClass($input);
+    $methods = $refClass->getMethods();
+    foreach ($methods as $method) {
+      $fmt[$method->getName()] = dpo_walk_method($method);
+    }
+    $input->__dpo = array(
+      'data' => (array)$input,
+      'methods' => $fmt,
+      'implements' => class_implements($input),
+      'parents' => class_parents($input),
+    );
+  }
+  return $input;
+}
+
+/**
+ * Print a variable to the 'message' area of the page.
+ *
+ * For objects, this function adds private data and
+ * class methods to the standard dpm().  For any other
+ * input type the output is the same as standard dpm().
+ *
+ * Uses drupal_set_message().
+ *
+ * @param $input
+ *   An arbitrary value to output.
+ * @param $name
+ *   Optional name for identifying the output.
+ * @param $type
+ *   Optional message type for drupal_set_message(), defaults to 'status'.
+ * @return
+ *   The unaltered input value.
+ */
+function dpo($input, $name = NULL, $type = 'status') {
+  if (user_access('access devel information')) {
+    $input = dpo_decorate($input);
+    $export = kprint_r($input, TRUE, $name);
+    drupal_set_message($export, $type);
+  }
+  return $input;
+}

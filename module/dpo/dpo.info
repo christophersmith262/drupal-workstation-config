@@ -1,0 +1,5 @@
+name = Drupal Print Object
+description = Extension to the devel module to support better object handling.
+package = Development
+core = 7.x
+dependencies[] = devel
